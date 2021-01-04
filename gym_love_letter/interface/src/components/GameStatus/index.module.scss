@@ -1,0 +1,36 @@
+.Overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: lightgrey;
+  opacity: 50%;
+}
+
+.GameStatus {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  cursor: pointer;
+
+  .gameOverMenu {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 10px;
+    padding: 100px;
+    background-color: #dba6a6;
+    cursor: default;
+
+    .announcement {
+      font-size: 60px;
+      letter-spacing: .15em;
+    }
+  }
+}

@@ -1,0 +1,29 @@
+.Play {
+  display: flex;
+  flex-direction: row;
+  align-items: end;
+  border-left: 2px solid #888;
+  padding: 0 20px;
+
+  .discard {
+    display: flex;
+    flex-direction: row;
+    align-items: end;
+
+    .arrows {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+      margin: 0 5px;
+      height: 210px;
+
+      .arrow {
+        border-top: 10px solid transparent;
+        border-bottom: 10px solid transparent;
+        border-left: 10px solid #888;
+        width: 0;
+        height: 0;
+      }
+    }
+  }
+}

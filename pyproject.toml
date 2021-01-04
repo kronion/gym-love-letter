@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "gym-love-letter"
+version = "0.1.0"
+description = ""
+authors = ["Kronion <kronion@users.noreply.github.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+stable-baselines3 = "^0.10.0"
+click = "^7.1.2"
+marshmallow = "^3.10.0"
+Flask = "^1.1.2"
+
+[tool.poetry.dev-dependencies]
+ipdb = "^0.13.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

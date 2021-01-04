@@ -1,0 +1,7 @@
+.DS_Store
+.mypy_cache
+.rgignore  # rigrep can ignore files that are still checked in
+*.swp
+
+__pycache__
+node_modules

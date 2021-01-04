@@ -1,0 +1,50 @@
+.PlayerHand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+
+  &.active {
+    .name {
+      color: #286aaa;
+    }
+  }
+
+  &.current {
+    .name {
+      color: #872a22;
+    }
+  }
+
+  &.out {
+    .name {
+      color: #8a8080;
+    }
+  }
+
+  .hand {
+    display: flex;
+
+    .cardContainer {
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      padding: 0 20px;
+
+      .targetButton {
+        display: flex;
+        justify-content: center;
+        padding-bottom: 5px;
+      }
+    }
+  }
+
+  .description {
+    text-align: center;
+
+    .name {
+      margin-bottom: 0.25rem;
+      font-size: 30px;
+    }
+  }
+}

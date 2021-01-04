@@ -1,0 +1,48 @@
+.Card {
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 10px;
+  width: 140px;
+  height: 210px;
+  background-color: #644a4a;
+  user-select: none;
+
+  &.empty {
+    border: 2px dashed #712525;
+    background-color: transparent;
+  }
+
+  &.faceUp {
+    background-color: #b59d9d;
+
+    &.disabled {
+      opacity: 65%;
+
+      &.selectable {
+        cursor: not-allowed;
+      }
+    }
+
+    &.selectable {
+      cursor: pointer;
+    }
+
+    &.selected {
+      box-shadow: 0 0 9px #ee7f2d;
+    }
+  }
+
+  .backDesign {
+    align-self: center;
+    font-size: 84px;
+    color: #b59d9d;
+  }
+  .properties {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 1rem;
+    color: #000;
+  }
+}

@@ -1,0 +1,18 @@
+.SelectionWizard {
+  .buttons {
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: 5px;
+  }
+  .guessDropdown {
+    padding-bottom: 5px;
+
+    > select {
+      width: 100%;
+    }
+  }
+  .message {
+    margin: 8px;
+    text-align: center;
+  }
+}

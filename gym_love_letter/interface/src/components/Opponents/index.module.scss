@@ -1,0 +1,47 @@
+.Opponents {
+  display: flex;
+  justify-content: center;
+
+  .opponent {
+    flex-grow: 1;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    &.active {
+      .name {
+        color: #286aaa;
+      }
+    }
+
+    &.current {
+      .name {
+        color: #872a22;
+      }
+    }
+
+    &.out {
+      .name {
+        color: #8a8080;
+      }
+    }
+
+    .hand {
+      display: flex;
+
+      .cardWrapper {
+        margin: 0 20px;
+      }
+    }
+
+    .description {
+      text-align: center;
+
+      .name {
+        margin-bottom: 0.25rem;
+        font-size: 30px;
+      }
+    }
+  }
+}
