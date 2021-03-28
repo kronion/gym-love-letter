@@ -389,7 +389,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
 
 [[package]]
 name = "stable-baselines3"
-version = "0.10.0"
+version = "1.0"
 description = "Pytorch version of Stable Baselines, implementations of reinforcement learning algorithms."
 category = "main"
 optional = false
@@ -405,7 +405,7 @@ torch = ">=1.4.0"
 
 [package.extras]
 docs = ["sphinx", "sphinx-autobuild", "sphinx-rtd-theme", "sphinxcontrib.spelling", "sphinx-autodoc-typehints"]
-extra = ["opencv-python", "atari-py (>=0.2.0,<0.3.0)", "pillow", "tensorboard", "psutil"]
+extra = ["opencv-python", "atari-py (>=0.2.0,<0.3.0)", "pillow", "tensorboard (>=2.2.0)", "psutil"]
 tests = ["pytest", "pytest-cov", "pytest-env", "pytest-xdist", "pytype", "flake8 (>=3.8)", "isort (>=5.0)", "black"]
 
 [[package]]
@@ -465,7 +465,7 @@ watchdog = ["watchdog"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "2ea7c2eb8fd1509a9aac3a18bee124d5f2261dc1597205bd7ef2f101b04c2427"
+content-hash = "273f0f0fc65560a8733e7c3bb216cbeeb1fbdf72f1645aa505382d75ca39351b"
 
 [metadata.files]
 appnope = [
@@ -780,8 +780,8 @@ six = [
     {file = "six-1.15.0.tar.gz", hash = "sha256:30639c035cdb23534cd4aa2dd52c3bf48f06e5f4a941509c8bafd8ce11080259"},
 ]
 stable-baselines3 = [
-    {file = "stable_baselines3-0.10.0-py3-none-any.whl", hash = "sha256:f48bb87fe850a65e0f6026d6e862fda63544faf08127fd36d6ade74d74528154"},
-    {file = "stable_baselines3-0.10.0.tar.gz", hash = "sha256:27e69748df17bfa00b380714b0288b1fd7d0f40db798a89c282b00b10b284a64"},
+    {file = "stable_baselines3-1.0-py3-none-any.whl", hash = "sha256:0de2d9696c19ebb68b154c8b1a617d70a94c441bd3b5418080d6ac1e4c09c5db"},
+    {file = "stable_baselines3-1.0.tar.gz", hash = "sha256:266f34caf6fd570b5b42c3a6c1b129cf4b188cec658910180d8983f4d993438a"},
 ]
 torch = [
     {file = "torch-1.7.1-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:422e64e98d0e100c360993819d0307e5d56e9517b26135808ad68984d577d75a"},
