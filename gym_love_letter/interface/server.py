@@ -16,12 +16,12 @@ def make_agents(env):
     human = HumanAgent()
     # load_path = "zoo/ppo_reward_bugfix4/latest/best_model"
     # load_path = "zoo/ppo_logging/2020-12-27T15:51:49/final_model"
-    load_path = "zoo/ppo_kl/2020-12-27T16:28:42/final_model"
-    model = PPO.load(load_path, env)
-    # random1 = RandomAgent(env)
+    # load_path = "zoo/ppo_kl/2020-12-27T16:28:42/final_model"
+    # model = PPO.load(load_path, env)
+    random1 = RandomAgent(env)
     # random2 = RandomAgent(env)
 
-    return [human, model]  # random1, random2]
+    return [human, random1]  # model]  # random1, random2]
 
 
 env = LoveLetterMultiAgentEnv(num_players=2, make_agents_cb=make_agents)
