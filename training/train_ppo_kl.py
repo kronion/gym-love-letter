@@ -45,7 +45,7 @@ def train(output_folder, load_path):
         model = PPO.load(load_path, env)
     else:
         # def test_fn(env):
-        #     return env.valid_action_mask
+        #     return env.valid_action_mask()
         #
         model = PPO(MlpPolicy, env, verbose=1, ent_coef=0.05)  #, action_mask_fn=test_fn)
 

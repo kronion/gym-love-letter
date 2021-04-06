@@ -42,7 +42,7 @@ for i in range(GAME_LIMIT):
                 move_count += 1
                 agent = env.agents[env.current_player.position]
                 if type(agent) is PPO:
-                    action_mask = th.as_tensor(env.valid_action_mask)
+                    action_mask = th.as_tensor(env.valid_action_mask())
                     action_id, _state = agent.predict(env.observe().vector, action_masks=action_mask)
                 else:
                     action_id, _state = agent.predict(env.observe().vector)

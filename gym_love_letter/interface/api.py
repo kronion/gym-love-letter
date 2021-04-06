@@ -121,7 +121,7 @@ def make_api(env: LoveLetterMultiAgentEnv):
             try:
                 agent = env.agents[env.current_player.position]
                 action_id, _state = agent.predict(
-                    env.observe().vector, action_masks=env.valid_action_mask
+                    env.observe().vector, action_masks=env.valid_action_mask()
                 )
                 obs, reward, done, info = env.protected_step(
                     action_id, full_cycle=False

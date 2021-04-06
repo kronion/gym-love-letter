@@ -94,13 +94,9 @@ class LoveLetterBaseEnv(gym.Env):
 
         self.game_over = False
 
-    @property
     def valid_action_mask(self) -> np.ndarray:
         mask = [self._valid_action(action) for action in self.actions]
         return np.array(mask)
-
-    def valid_action_mask2(self) -> np.ndarray:
-        return self.valid_action_mask
 
     @property
     def valid_actions(self) -> List[Action]:
@@ -483,7 +479,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
 
                         mask = None
                         if getattr(player_agent, "action_mask_fn", None) is not None:
-                            mask = self.valid_action_mask
+                            mask = self.valid_action_mask()
 
                         action_id, _state = player_agent.predict(obs, action_masks=mask)
                         obs, reward, done, info = super().step(action_id)
@@ -522,7 +518,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
 
                     mask = None
                     if getattr(player_agent, "action_mask_fn", None) is not None:
-                        mask = self.valid_action_mask
+                        mask = self.valid_action_mask()
 
                     action_id, _state = player_agent.predict(obs, action_masks=mask)
 
@@ -541,6 +537,6 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
         step() can't raise any. Here, we can.
         """
 
-        if not self.valid_action_mask[action_id]:
+        if not self.valid_action_mask()[action_id]:
             raise InvalidPlayError("Invalid action played")
         return self.step(action_id, *args, **kwargs)
