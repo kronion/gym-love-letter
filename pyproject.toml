@@ -3,13 +3,15 @@ name = "gym-love-letter"
 version = "0.1.0"
 description = ""
 authors = ["Kronion <kronion@users.noreply.github.com>"]
+exclude = [
+  "gym_love_letter/TODO.md",
+  "gym_love_letter/interface/*"
+]
 
 [tool.poetry.dependencies]
 python = "^3.8"
 stable-baselines3 = "^1"
 click = "^7.1.2"
-marshmallow = "^3.10.0"
-Flask = "^1.1.2"
 
 [tool.poetry.dev-dependencies]
 ipdb = "^0.13.4"
