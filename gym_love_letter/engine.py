@@ -1,10 +1,12 @@
 from __future__ import annotations
 from enum import IntEnum
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Type
 
 import gym
 import numpy as np
 from gym.utils import seeding
+
+from gym_love_letter.agents import Agent
 
 
 class Card(IntEnum):
@@ -181,9 +183,18 @@ class Player:
 
         self._priest_targets: Dict[Player, Card] = {}
 
+        self.agent: Agent = None
+
     @property
     def card(self) -> Optional[Card]:
         return self.hand.card
+
+    @property
+    def interactive(self) -> bool:
+        if self.agent is None:
+            return False
+
+        return self.agent.interactive
 
     @property
     def last_played(self) -> Card:
@@ -195,6 +206,9 @@ class Player:
     @property
     def status_vector(self) -> Tuple[int, int]:
         return (self.active, self.safe)
+
+    def set_agent(self, agent: Agent):
+        self.agent = agent
 
     def eliminate(self) -> Optional[Card]:
         """
@@ -260,10 +274,11 @@ class Player:
 
 
 class Game:
-    def __init__(self, env_class: gym.Env, agent_classes: List):
+    def __init__(self, env_class: Type[gym.Env], agent_classes: List[Type[Agent]]):
         self.env = env_class(num_players=len(agent_classes))
-        self.agents = [cls(self.env) for cls in agent_classes]
-        self.agents_done = [False for i in range(len(self.agents))]
+        # TODO initialize player agents once env is initialized
+
+        self.players_done = [False for i in range(len(self.env.players))]
         self.obs_history: np.array = []
 
         self.obs = np.array([])  # Necessary to provide a type hint
@@ -271,18 +286,17 @@ class Game:
         self.reward = 0
         self.info: Dict = {}
 
-    @property
-    def curr_agent(self):
-        return self.agents[self.env.current_player.position]
-
     def step(self, action_id: int = None):
         if self.player_done:
-            self.agents_done[self.env.current_player.position] = True
+            self.players_done[self.env.current_player.position] = True
             self.obs, self.reward, self.player_done, self.info = self.env.next_player()
             return
 
         if not action_id:
-            action_id = self.curr_agent.predict(self.obs)
+            try:
+                action_id = self.env.current_player.agent.predict(self.obs)
+            except AttributeError as e:
+                raise ValueError("Must initialize player agent") from e
 
         self.obs, self.reward, self.player_done, self.info = self.env.step(action_id)
 
@@ -295,5 +309,5 @@ class Game:
 
     def run(self):
         self.reset()
-        while not all(self.agents_done):
+        while not all(self.players_done):
             self.step()

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 import gym
 import numpy as np
 from gym.utils import seeding
+
+from gym_love_letter.agents import Agent, RandomAgent
 from gym_love_letter.engine import Card, Deck, Player
 from gym_love_letter.envs.actions import (Action, ActionWrapper,
                                           generate_actions)
@@ -58,6 +60,7 @@ class LoveLetterBaseEnv(gym.Env):
     def __init__(
         self,
         num_players: int = 2,
+        agents: Optional[List[Type[Agent]]] = None,
         reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.simple_turn_reward,
         player_names: List[str] = None,
     ):
@@ -75,7 +78,7 @@ class LoveLetterBaseEnv(gym.Env):
             player_names = []
         self._player_names = [
             player_names[i] if i < len(player_names) else f"Player {i}"
-            for i in range(num_players)
+            for i in range(self.num_players)
         ]
 
         self.players = [
@@ -93,6 +96,21 @@ class LoveLetterBaseEnv(gym.Env):
         self.discard_pile: List[Card] = []
 
         self.game_over = False
+
+        # Now that the environment has been initialized, provide a reference
+        # to each player agent. This allows agents to access the env's
+        # valid action mask.
+        self._agents = None
+        if agents is None:
+            agents = [RandomAgent(env)] * self.num_players
+        self.set_agents(agents)
+
+    def set_agents(self, agents: List[Agent]) -> None:
+        if len(agents) != self.num_players:
+            raise ValueError("Must have same number of agents as players")
+        self._agents = agents
+        for agent, player in zip(self.agents, self.players):
+            player.set_agent(agent)
 
     def valid_action_mask(self) -> np.ndarray:
         mask = [self._valid_action(action) for action in self.actions]
@@ -441,26 +459,6 @@ class LoveLetterBaseEnv(gym.Env):
 
 
 class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
-    def __init__(
-        self,
-        num_players: int = 2,
-        reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.simple_turn_reward,
-        make_agents_cb: Callable[[LoveLetterMultiAgentEnv], List] = None,
-    ):
-        """
-        Args:
-            make_agents_cb: Callback to construct agents to play in the env.
-                If None, agents must later be provided via set_agents().
-        """
-
-        super().__init__(num_players, reward_fn)
-
-        if make_agents_cb:
-            agents = make_agents_cb(self)
-            if len(agents) != self.num_players:
-                raise ValueError("Must have same number of agents as players")
-            self.agents = agents
-
     def reset(self, training=True) -> np.array:
         if not training:
             obs = super().reset()
@@ -475,7 +473,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
                 done = False
                 while self.current_player.position != 0:
                     if not done:
-                        player_agent = self.agents[self.current_player.position]
+                        player_agent = self.current_player.agent
 
                         mask = None
                         if getattr(player_agent, "action_mask_fn", None) is not None:
@@ -491,11 +489,6 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
                 valid = not self.game_over and self.current_player.active
 
         return obs
-
-    def set_agents(self, agents: List) -> None:
-        if len(agents) != self.num_players:
-            raise ValueError("Must have same number of agents as players")
-        self.agents = agents
 
     def step(
         self, action_id: int, full_cycle: bool = True
@@ -514,7 +507,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
             for i in range(self.num_players - 1):
                 # import ipdb; ipdb.set_trace()
                 if not done:
-                    player_agent = self.agents[self.current_player.position]
+                    player_agent = self.current_player.agent
 
                     mask = None
                     if getattr(player_agent, "action_mask_fn", None) is not None:

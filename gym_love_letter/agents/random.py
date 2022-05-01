@@ -2,8 +2,10 @@ from typing import Tuple
 
 from gym.utils import seeding
 
+from gym_love_letter.agents.abstract import Agent
 
-class RandomAgent:
+
+class RandomAgent(Agent):
     def __init__(self, env, seed: int = None):
         self.env = env
 
