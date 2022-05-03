@@ -77,16 +77,16 @@ class LoveLetterBaseEnv(gym.Env):
         self.num_players = num_players
         self.reward = reward_fn
 
-        # Store player names for when player objects are initialized
+        # Generate player names if not specified
         if player_names is None:
             player_names = []
-        self._player_names = [
+        player_names = [
             player_names[i] if i < len(player_names) else f"Player {i}"
             for i in range(self.num_players)
         ]
 
         self.players = [
-            Player(i, self._player_names[i]) for i in range(self.num_players)
+            Player(i, player_names[i]) for i in range(self.num_players)
         ]
         self.current_player = self.players[0]
         self.starting_player = self.current_player
@@ -133,9 +133,17 @@ class LoveLetterBaseEnv(gym.Env):
 
         return [a for a in self.actions if self._valid_action(a)]
 
-    def _valid_targets(self, card: Card) -> List[int]:
+    def _valid_targets(self, card: Card) -> List[Optional[int]]:
+        """
+        Returns the positions of valid player targets for the given card.
+
+        IMPORTANT: In this context, None means the card is valid to play with no target.
+        Many cards require a target _unless_ there's no legal target, in which case they
+        can be played with no target.
+        """
+
         if not card.takes_target:
-            return []
+            return [None]
 
         # Never valid to target an inactive or safe player
         players = [p for p in self.players if p.active and not p.safe]
@@ -145,12 +153,15 @@ class LoveLetterBaseEnv(gym.Env):
             players = [p for p in players if p is not self.current_player]
 
         # NB: All player positions are normalized relative to the current player's
-        player_positions = [
+        player_positions: List[Optional[int]] = [
             (p.position - self.current_player.position) % self.num_players
             for p in players
         ]
+        if len(players) == 0:
+            player_positions = [None]
 
         return player_positions
+
 
     def _valid_action(self, action: Action) -> bool:
         # The empty card is a sentinel value for vectors. It cannot be played.
@@ -230,9 +241,9 @@ class LoveLetterBaseEnv(gym.Env):
         self.game_over = False
 
         # Reset player state
-        self.players = [
-            Player(i, self._player_names[i]) for i in range(self.num_players)
-        ]
+        for p in self.players:
+            p.reset()
+
         self.current_player = self.np_random.choice(self.players)
         self.starting_player = self.current_player
 
@@ -288,7 +299,10 @@ class LoveLetterBaseEnv(gym.Env):
 
     def seed(self, seed=None):
         self._np_random, seed = seeding.np_random(seed)
-        return [seed]
+        # generate seed for deck
+        deck_seed = self.np_random.randint(0, 2 ** 63 - 1)
+        deck_seeds = self.deck.seed(deck_seed)
+        return [seed] + deck_seeds
 
     def _check_game_over(self) -> None:
         # If no cards remain, compare hands

@@ -175,15 +175,15 @@ class Player:
     def __init__(self, position: int, name: str, hand: Hand = None):
         self.position = position
         self.name = name
+        self.agent: Optional[Agent] = None
+
+        # State that resets each game via reset()
         self.active = True
         self.safe = False
         self.hand = hand if hand else Hand()
         self.play_history: List[Card] = []
         self.players_eliminated: Set[Player] = set()
-
         self._priest_targets: Dict[Player, Card] = {}
-
-        self.agent: Agent = None
 
     @property
     def card(self) -> Optional[Card]:
@@ -206,6 +206,20 @@ class Player:
     @property
     def status_vector(self) -> Tuple[int, int]:
         return (self.active, self.safe)
+
+    def reset(self):
+        """
+        Initialize player state for the beginning of a game.
+
+        Note that the player's agent is not changed. It can be swapped with set_agent().
+        """
+
+        self.active = True
+        self.safe = False
+        self.hand = Hand()
+        self.play_history: List[Card] = []
+        self.players_eliminated: Set[Player] = set()
+        self._priest_targets: Dict[Player, Card] = {}
 
     def set_agent(self, agent: Agent):
         self.agent = agent
