@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from gym_love_letter.envs.observations import Observation
+
+if TYPE_CHECKING:
+    from gym_love_letter.envs.observations import Observation
 
 
 class Agent(ABC):

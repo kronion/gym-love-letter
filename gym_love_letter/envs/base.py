@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import copy
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Type
 
 import gym
 import numpy as np
 from gym.utils import seeding
 
-from gym_love_letter.agents import Agent, RandomAgent
+from gym_love_letter.agents import RandomAgent
 from gym_love_letter.engine import Card, Deck, Player
 from gym_love_letter.envs.actions import (Action, ActionWrapper,
                                           generate_actions)
 from gym_love_letter.envs.observations import Observation
+
+
+if TYPE_CHECKING:
+    from gym_love_letter.agents import Agent
 
 
 class InvalidPlayError(ValueError):
@@ -111,7 +115,7 @@ class LoveLetterBaseEnv(gym.Env):
         if len(agents) != self.num_players:
             raise ValueError("Must have same number of agents as players")
         self._agents = agents
-        for agent, player in zip(self.agents, self.players):
+        for agent, player in zip(self._agents, self.players):
             player.set_agent(agent)
 
     def valid_action_mask(self) -> np.ndarray:
