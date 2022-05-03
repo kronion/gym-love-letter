@@ -7,7 +7,7 @@ from gym_love_letter.agents.abstract import Agent
 
 class RandomAgent(Agent):
     def __init__(self, env, seed: int = None):
-        self.env = env
+        super().__init__(env)
 
         if seed is not None:
             self.seed(seed)

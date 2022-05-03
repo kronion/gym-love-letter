@@ -6,7 +6,7 @@ import gym
 import numpy as np
 from gym.utils import seeding
 
-from gym_love_letter.agents import Agent
+from gym_love_letter.agents import Agent, HumanAgent
 
 
 class Card(IntEnum):
@@ -194,7 +194,7 @@ class Player:
         if self.agent is None:
             return False
 
-        return self.agent.interactive
+        return isinstance(self.agent, HumanAgent)
 
     @property
     def last_played(self) -> Card:

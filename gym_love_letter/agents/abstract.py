@@ -7,8 +7,8 @@ from gym_love_letter.envs.observations import Observation
 
 
 class Agent(ABC):
-    # May be overridden to indicate that the agent is controlled by a human
-    interactive: bool = False
+    def __init__(self, env, *args, **kwargs):
+        self.env = env
 
     @abstractmethod
     def predict(self, observation: Observation, action_masks: Optional[np.array] = None):

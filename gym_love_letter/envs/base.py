@@ -60,7 +60,7 @@ class LoveLetterBaseEnv(gym.Env):
     def __init__(
         self,
         num_players: int = 2,
-        agents: Optional[List[Type[Agent]]] = None,
+        agent_classes: Optional[List[Type[Agent]]] = None,
         reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.simple_turn_reward,
         player_names: List[str] = None,
     ):
@@ -100,9 +100,11 @@ class LoveLetterBaseEnv(gym.Env):
         # Now that the environment has been initialized, provide a reference
         # to each player agent. This allows agents to access the env's
         # valid action mask.
-        self._agents = None
-        if agents is None:
-            agents = [RandomAgent(env)] * self.num_players
+        self._agents: List[Agent] = []
+        if agent_classes is None:
+            agent_classes = [RandomAgent] * self.num_players
+        agents = [cls(self) for cls in agent_classes]
+
         self.set_agents(agents)
 
     def set_agents(self, agents: List[Agent]) -> None:
@@ -127,9 +129,9 @@ class LoveLetterBaseEnv(gym.Env):
 
         return [a for a in self.actions if self._valid_action(a)]
 
-    def _valid_targets(self, card: Card) -> List[Optional[int]]:
+    def _valid_targets(self, card: Card) -> List[int]:
         if not card.takes_target:
-            return [None]
+            return []
 
         # Never valid to target an inactive or safe player
         players = [p for p in self.players if p.active and not p.safe]
@@ -139,12 +141,10 @@ class LoveLetterBaseEnv(gym.Env):
             players = [p for p in players if p is not self.current_player]
 
         # NB: All player positions are normalized relative to the current player's
-        player_positions: List[Optional[int]] = [
+        player_positions = [
             (p.position - self.current_player.position) % self.num_players
             for p in players
         ]
-        if len(players) == 0:
-            player_positions = [None]
 
         return player_positions
 
@@ -163,10 +163,8 @@ class LoveLetterBaseEnv(gym.Env):
         ]:
             return False
 
-        if action.card.takes_target and action.target not in self._valid_targets(
-            action.card
-        ):
-            return False
+        if action.card.takes_target:
+            return action.target in self._valid_targets(action.card)
 
         return True
 
@@ -440,6 +438,7 @@ class LoveLetterBaseEnv(gym.Env):
 
         else:
             # Should never get here
+            # TODO remove
             import ipdb; ipdb.set_trace()
             raise InvalidPlayError(f"Invalid action {action} played")
 
@@ -474,11 +473,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
                 while self.current_player.position != 0:
                     if not done:
                         player_agent = self.current_player.agent
-
-                        mask = None
-                        if getattr(player_agent, "action_mask_fn", None) is not None:
-                            mask = self.valid_action_mask()
-
+                        mask = self.valid_action_mask()
                         action_id, _state = player_agent.predict(obs, action_masks=mask)
                         obs, reward, done, info = super().step(action_id)
                     else:
@@ -508,13 +503,8 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
                 # import ipdb; ipdb.set_trace()
                 if not done:
                     player_agent = self.current_player.agent
-
-                    mask = None
-                    if getattr(player_agent, "action_mask_fn", None) is not None:
-                        mask = self.valid_action_mask()
-
+                    mask = self.valid_action_mask()
                     action_id, _state = player_agent.predict(obs, action_masks=mask)
-
                     obs, reward, done, info = super().step(action_id)
                 else:
                     obs, reward, done, info = super()._next_player()
