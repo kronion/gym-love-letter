@@ -172,9 +172,9 @@ class Hand:
 
 
 class Player:
-    def __init__(self, position: int, name: str, hand: Hand = None):
+    def __init__(self, position: int, name: str | None = None, hand: Hand | None = None):
         self.position = position
-        self.name = name
+        self.name = name if name is not None else f"Player {position}"
         self.agent: Optional[Agent] = None
 
         # State that resets each game via reset()
