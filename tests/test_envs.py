@@ -7,11 +7,11 @@ from gym_love_letter.envs import LoveLetterBaseEnv
 class TestBaseEnvInitialization:
     def test_default_initialization(self):
         env = LoveLetterBaseEnv()
-        obs = env.reset()
+        env.reset()
 
     def test_initialize_agent_classes(self):
         env = LoveLetterBaseEnv(agent_classes=[HumanAgent, RandomAgent])
-        obs = env.reset()
+        env.reset()
 
         assert isinstance(env.players[0].agent, HumanAgent)
         assert isinstance(env.players[1].agent, RandomAgent)
@@ -20,7 +20,7 @@ class TestBaseEnvInitialization:
         env = LoveLetterBaseEnv()
         agents = [RandomAgent(env), HumanAgent(env)]
         env.set_agents(agents)
-        obs = env.reset()
+        env.reset()
 
         assert isinstance(env.players[0].agent, RandomAgent)
         assert isinstance(env.players[1].agent, HumanAgent)
@@ -47,13 +47,12 @@ class TestBaseEnvGameplay:
 
         # Seed the env and random agents for reproducability
         MAIN_SEED = 543210543210
-        env.seed(MAIN_SEED)
+        obs = env.reset(seed=MAIN_SEED)
         for player in env.players:
             assert isinstance(player.agent, RandomAgent)
-            seed = env.np_random.randint(0, 2 ** 63 - 1)
+            seed = int(env.np_random.integers(0, 2 ** 63 - 1))
             player.agent.seed(seed)
 
-        obs = env.reset()
         done = False
 
         # Because of deck size, the game is guaranteed to finish within 16 moves
@@ -63,7 +62,7 @@ class TestBaseEnvGameplay:
         while not done and move_count < MAX_GAME_DURATION:
             player = env.current_player
             action_id, _ = player.agent.predict(obs)
-            obs, reward, done, info = env.step(action_id)
+            obs, _, done, _, _ = env.step(action_id)
             move_count += 1
 
         assert move_count < MAX_GAME_DURATION

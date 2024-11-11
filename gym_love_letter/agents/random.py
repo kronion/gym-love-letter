@@ -6,7 +6,7 @@ from gym_love_letter.agents.abstract import Agent
 
 
 class RandomAgent(Agent):
-    def __init__(self, env, seed: int = None):
+    def __init__(self, env, seed: int | None = None):
         super().__init__(env)
 
         if seed is not None:
@@ -27,6 +27,6 @@ class RandomAgent(Agent):
 
         return self._np_random
 
-    def seed(self, seed=None):
+    def seed(self, seed: int | None = None):
         self._np_random, seed = seeding.np_random(seed)
         return [seed]
