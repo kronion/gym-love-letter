@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Type
+import itertools
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-import gym
+import gymnasium as gym
 import numpy as np
-from gym.utils import seeding
+from gymnasium import spaces
 
 from gym_love_letter.agents import RandomAgent
 from gym_love_letter.engine import Card, Deck, Player
@@ -34,7 +35,7 @@ class Rewards:
         if not env.current_player.active:
             return 0
 
-        reward = 1 / len([p for p in env.players if p.active])
+        reward = 1 / len(env.active_players)
 
         if env.game_over:
             reward += 5
@@ -64,66 +65,67 @@ class LoveLetterBaseEnv(gym.Env):
     def __init__(
         self,
         num_players: int = 2,
-        agent_classes: Optional[List[Type[Agent]]] = None,
+        agent_classes: Sequence[type[Agent]] | None = None,
         reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.simple_turn_reward,
-        player_names: List[str] = None,
+        player_names: list[str] | None = None,
     ):
-        # If we want to use stable_baselines, our action space cannot be a Tuple or Dict
+        # If we want to use stable_baselines, our action space cannot be a tuple or Dict
         self.actions = generate_actions(Observation.MAX_NUM_PLAYERS)
-        self.action_space = gym.spaces.Discrete(len(self.actions))
+        self.action_space: spaces.Discrete = spaces.Discrete(len(self.actions))
 
-        self.observation_space = Observation.space(self.action_space.n)
+        self.observation_space = Observation.space(int(self.action_space.n))
 
         self.num_players = num_players
         self.reward = reward_fn
 
-        # Generate player names if not specified
+        # Player names are auto-generated if not specified
         if player_names is None:
             player_names = []
-        player_names = [
-            player_names[i] if i < len(player_names) else f"Player {i}"
-            for i in range(self.num_players)
-        ]
 
         self.players = [
-            Player(i, player_names[i]) for i in range(self.num_players)
+            Player(i, name=name) for i, name in itertools.zip_longest(range(self.num_players), player_names)
         ]
         self.current_player = self.players[0]
         self.starting_player = self.current_player
-        self.winners: List[Player] = []
+        self.winners: list[Player] = []
 
         # Make a new deck
         self.deck = Deck()
 
         # Clear action history & discard pile
-        self.action_history: List[ActionWrapper] = []
-        self.discard_pile: List[Card] = []
+        self.action_history: list[ActionWrapper] = []
+        self.discard_pile: list[Card] = []
 
         self.game_over = False
 
         # Now that the environment has been initialized, provide a reference
         # to each player agent. This allows agents to access the env's
         # valid action mask.
-        self._agents: List[Agent] = []
+        self._agents: Sequence[Agent] = []
         if agent_classes is None:
             agent_classes = [RandomAgent] * self.num_players
         agents = [cls(self) for cls in agent_classes]
 
         self.set_agents(agents)
 
-    def set_agents(self, agents: List[Agent]) -> None:
+    def set_agents(self, agents: Sequence[Agent]) -> None:
         if len(agents) != self.num_players:
             raise ValueError("Must have same number of agents as players")
         self._agents = agents
         for agent, player in zip(self._agents, self.players):
             player.set_agent(agent)
 
+    @property
+    def active_players(self) -> list[Player]:
+        return [player for player in self.players if player.active]
+
+
     def valid_action_mask(self) -> np.ndarray:
         mask = [self._valid_action(action) for action in self.actions]
-        return np.array(mask)
+        return np.array(mask, dtype=np.int8)
 
     @property
-    def valid_actions(self) -> List[Action]:
+    def valid_actions(self) -> list[Action]:
         """
         The set of valid actions for the current player.
 
@@ -133,7 +135,7 @@ class LoveLetterBaseEnv(gym.Env):
 
         return [a for a in self.actions if self._valid_action(a)]
 
-    def _valid_targets(self, card: Card) -> List[Optional[int]]:
+    def _valid_targets(self, card: Card) -> list[int | None]:
         """
         Returns the positions of valid player targets for the given card.
 
@@ -146,14 +148,14 @@ class LoveLetterBaseEnv(gym.Env):
             return [None]
 
         # Never valid to target an inactive or safe player
-        players = [p for p in self.players if p.active and not p.safe]
+        players = [p for p in self.active_players if not p.safe]
 
         # Only Prince can be used to target oneself
         if card != Card.PRINCE:
             players = [p for p in players if p is not self.current_player]
 
         # NB: All player positions are normalized relative to the current player's
-        player_positions: List[Optional[int]] = [
+        player_positions: list[int | None] = [
             (p.position - self.current_player.position) % self.num_players
             for p in players
         ]
@@ -260,19 +262,11 @@ class LoveLetterBaseEnv(gym.Env):
 
         return self.observe()
 
-    def reset(self) -> np.array:
-        return self._reset().vector
-
-    @property
-    def np_random(self):
-        """
-        Lazily seed the rng if not set explicitly.
-        """
-
-        if not hasattr(self, "_np_random"):
-            self.seed()
-
-        return self._np_random
+    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict]:
+        super().reset(seed=seed)  # Initializes np_random
+        deck_seed = int(self.np_random.integers(2 ** 63))
+        self.deck.seed(deck_seed)
+        return self._reset().vector, {}
 
     def observe(self) -> Observation:
         return Observation(
@@ -297,33 +291,24 @@ class LoveLetterBaseEnv(gym.Env):
                 if p.priest_info().get(self.current_player, None) == card:
                     p.remove_priest_target(self.current_player)
 
-    def seed(self, seed=None):
-        self._np_random, seed = seeding.np_random(seed)
-        # generate seed for deck
-        deck_seed = self.np_random.randint(0, 2 ** 63 - 1)
-        deck_seeds = self.deck.seed(deck_seed)
-        return [seed] + deck_seeds
-
     def _check_game_over(self) -> None:
         # If no cards remain, compare hands
         if self.deck.remaining() == 0:
-            max_card = max([p.card for p in self.players if p.active])
-            for player in [p for p in self.players if p.active]:
+            max_card = max([p.card for p in self.active_players if p.card is not None])
+            for player in self.active_players:
                 # Only player(s) with the max value card remain
                 if player.card != max_card:
                     self.eliminate(player)
 
-        remaining_players = [p for p in self.players if p.active]
-
-        if len(remaining_players) <= 0:
+        if len(self.active_players) <= 0:
             raise RuntimeError("No players remaining")
 
         # If the game has ended, determine winners
-        if len(remaining_players) == 1 or self.deck.remaining() == 0:
+        if len(self.active_players) == 1 or self.deck.remaining() == 0:
             self.game_over = True
-            self.winners = remaining_players
+            self.winners = self.active_players
 
-    def _next_player(self) -> Tuple[np.array, float, bool, Dict]:
+    def _next_player(self) -> tuple[np.ndarray, float, bool, bool, dict]:
         # NOTE: The current player may not actually be active, but we still need
         # to provide that player done + reward.
         self.current_player = self.players[
@@ -345,14 +330,14 @@ class LoveLetterBaseEnv(gym.Env):
             self.current_player.draw(self.deck)
 
         obs = self.observe()
-        return obs.vector, reward, done, {"observation": obs}
+        return obs.vector, reward, done, False, {"observation": obs}
 
-    def step(self, action_id: int) -> Tuple[np.array, float, bool, Dict]:
+    def step(self, action_id: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         # Validates and reindexes action
         action = self.decode_action(action_id)
         card = action.card
-        discarding_player: Optional[Player] = None
-        discard: Optional[Card] = None
+        discarding_player: Player | None = None
+        discard: Card | None = None
 
         self.play(card)
 
@@ -476,62 +461,71 @@ class LoveLetterBaseEnv(gym.Env):
 
 
 class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
-    def reset(self, training=True) -> np.array:
-        if not training:
-            obs = super().reset()
-        else:
-            valid = False
+    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict]:
+        options = options or {}
+        training = options.get("training", True)
+
+        obs, info = super().reset(seed=seed)
+
+        if training:
+            # The setup is only valid for training if the training agent hasn't
+            # already been eliminated before its first move!
+            valid = not self.game_over and self.current_player.active
 
             while not valid:
-                obs = super().reset()
+                obs, info = super().reset()
 
                 # Assumes that the training agent is in the 0th position
                 # TODO: Assure that we don't loop forever
-                done = False
+                terminated = False
                 while self.current_player.position != 0:
-                    if not done:
+                    if not terminated:
                         player_agent = self.current_player.agent
                         mask = self.valid_action_mask()
-                        action_id, _state = player_agent.predict(obs, action_masks=mask)
-                        obs, reward, done, info = super().step(action_id)
+                        action_id, _ = player_agent.predict(obs, action_masks=mask)
+                        obs, _, terminated, _, _ = super().step(action_id)
                     else:
-                        obs, reward, done, info = super()._next_player()
+                        obs, _, terminated, _, _ = super()._next_player()
 
-                # The setup is only valid for training if the training agent hasn't
-                # already been eliminated before its first move!
                 valid = not self.game_over and self.current_player.active
 
-        return obs
+        return obs, info
 
     def step(
         self, action_id: int, full_cycle: bool = True
-    ) -> Tuple[np.array, float, bool, Dict]:
+    ) -> tuple[np.ndarray, float, bool, bool, dict]:
+        # sanity check
+        if self.game_over:
+            raise Exception("game over already?")
+
         # Make the current player's move
         try:
-            obs, reward, done, info = super().step(action_id)
+            obs, reward, terminated, truncated, info = super().step(action_id)
         except InvalidPlayError:
             # import ipdb; ipdb.set_trace()
             obs = self.observe()
+            print(f"Obs: {obs}")
+            print(f"Action: {self.actions[action_id]}")
+            print(f"Valid Actions: {self.valid_actions}")
             # TODO: Deal with this magic number
-            return obs.vector, -10, True, {"observation": obs}
+            return obs.vector, -10, True, False, {"observation": obs}
 
         if full_cycle:
             # Make a move for every other agent in the game to come back around to the current player
             for i in range(self.num_players - 1):
-                # import ipdb; ipdb.set_trace()
-                if not done:
+                if not terminated:
                     player_agent = self.current_player.agent
                     mask = self.valid_action_mask()
-                    action_id, _state = player_agent.predict(obs, action_masks=mask)
-                    obs, reward, done, info = super().step(action_id)
+                    action_id, _ = player_agent.predict(obs, action_masks=mask)
+                    obs, reward, terminated, truncated, info = super().step(action_id)
                 else:
-                    obs, reward, done, info = super()._next_player()
+                    obs, reward, terminated, truncated, info = super()._next_player()
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
     def protected_step(
         self, action_id: int, *args, **kwargs
-    ) -> Tuple[np.array, float, bool, Dict]:
+    ) -> tuple[np.ndarray, float, bool, bool, dict]:
         """
         This wrapper around step that is allowed to raise an exception if a
         move is invalid. Exceptions cannot be handled during training, so

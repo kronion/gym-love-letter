@@ -1,8 +1,8 @@
 from typing import List
 
 import numpy as np
-import gym
-from gym.spaces import MultiDiscrete, Space
+import gymnasium as gym
+from gymnasium import spaces
 
 from gym_love_letter.engine import Card, Deck, Player
 from gym_love_letter.envs.actions import ActionWrapper
@@ -119,7 +119,7 @@ class Observation:
         self.full_vec_length = i
 
     @property
-    def vector(self) -> np.array:
+    def vector(self) -> np.ndarray:
         """
         Encodes the game state visible to the current player.
         """
@@ -193,7 +193,7 @@ class Observation:
         return vec
 
     @classmethod
-    def space(cls, action_space_size: int) -> Space:
+    def space(cls, action_space_size: int) -> spaces.Space:
         space = []
 
         # Put current player's cards at the front of the observation state so
@@ -230,7 +230,16 @@ class Observation:
         for card in range(DECK_SIZE - 1):
             space += [action_space_size]
 
-        return MultiDiscrete(space)
+        return spaces.MultiDiscrete(space)
 
     def __repr__(self):
         return f"Observation: {self.vector}"
+
+
+class DictObservation(Observation):
+    @classmethod
+    def space(cls, action_space_size: int) -> spaces.Space:
+        return spaces.Dict({
+            "observation": super().space(action_space_size),
+            "action_mask": spaces.MultiBinary(action_space_size),
+        })
