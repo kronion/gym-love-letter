@@ -43,6 +43,13 @@ class Rewards:
         return reward
 
     @staticmethod
+    def game_won_reward(env) -> float:
+        if env.game_over and env.current_player.active:
+            return 1
+
+        return 0
+
+    @staticmethod
     def fast_elimination_reward(env) -> float:
         player = env.current_player
 
@@ -50,13 +57,17 @@ class Rewards:
         reward = 1 if player.active and len(player.play_history) > 0 else 0
 
         # Extra reward for eliminating other players
-        reward += len(player.players_eliminated)
+        reward += len(player.players_eliminated) * 3
+        player.players_eliminated = set()  # Reset cache. TODO use a counter for this instead
 
         # Extra reward for each future action that was prevented
         if env.game_over and player.active:
+            reward += 10  # Always reward winning
             reward += env.deck.remaining()
 
-        return reward
+        NORMALIZE_BY = 10
+
+        return reward / NORMALIZE_BY
 
 
 class LoveLetterBaseEnv(gym.Env):
@@ -65,8 +76,9 @@ class LoveLetterBaseEnv(gym.Env):
     def __init__(
         self,
         num_players: int = 2,
+        randomize_player_count: bool = False,
         agent_classes: Sequence[type[Agent]] | None = None,
-        reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.simple_turn_reward,
+        reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.fast_elimination_reward,
         player_names: list[str] | None = None,
     ):
         # If we want to use stable_baselines, our action space cannot be a tuple or Dict
@@ -76,6 +88,7 @@ class LoveLetterBaseEnv(gym.Env):
         self.observation_space = Observation.space(int(self.action_space.n))
 
         self.num_players = num_players
+        self.randomize_player_count = randomize_player_count
         self.reward = reward_fn
 
         # Player names are auto-generated if not specified
@@ -216,7 +229,7 @@ class LoveLetterBaseEnv(gym.Env):
         self.discard_pile.append(card)
 
         # Update priest info for all other players
-        for p in self.players:
+        for p in self.active_players:
             if p != player:
                 if p.priest_info().get(player, None) == card:
                     p.remove_priest_target(player)
@@ -231,7 +244,7 @@ class LoveLetterBaseEnv(gym.Env):
             self.current_player.players_eliminated.add(player)
 
         # Update priest info for all other players
-        for p in self.players:
+        for p in self.active_players:
             if p != player:
                 # TODO: Address private attribute access
                 if player in p._priest_targets:
@@ -246,7 +259,15 @@ class LoveLetterBaseEnv(gym.Env):
         for p in self.players:
             p.reset()
 
-        self.current_player = self.np_random.choice(self.players)
+        if self.randomize_player_count:
+            active_players = self.np_random.integers(2, self.num_players, endpoint=True)
+
+            # Skip the active players from the front of the list.
+            # We're assuming the main player is always in position 0.
+            for p in self.players[active_players:]:
+                p.active = False
+
+        self.current_player = self.np_random.choice(self.active_players)
         self.starting_player = self.current_player
 
         # Clear action history & discard pile
@@ -263,7 +284,7 @@ class LoveLetterBaseEnv(gym.Env):
         return self.observe()
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict]:
-        super().reset(seed=seed)  # Initializes np_random
+        super().reset(seed=seed)  # Farama requires this to initialize np_random
         deck_seed = int(self.np_random.integers(2 ** 63))
         self.deck.seed(deck_seed)
         return self._reset().vector, {}
@@ -286,7 +307,7 @@ class LoveLetterBaseEnv(gym.Env):
         self.current_player.play(card)
         self.discard_pile.append(card)
 
-        for p in self.players:
+        for p in self.active_players:
             if p != self.current_player:
                 if p.priest_info().get(self.current_player, None) == card:
                     p.remove_priest_target(self.current_player)
@@ -366,7 +387,7 @@ class LoveLetterBaseEnv(gym.Env):
                 elif card == Card.BARON:
                     current_player_card = self.current_player.card
                     if current_player_card is None:
-                        import ipdb; ipdb.set_trace()
+                        breakpoint()
                         raise RuntimeError(f"Player {self.current_player.position} has no card")
 
                     # The player with the lower card value is out. If tie, nothing happens.
@@ -402,35 +423,9 @@ class LoveLetterBaseEnv(gym.Env):
                     self.current_player.add_priest_target(target)
                     target.add_priest_target(self.current_player)
 
-                    # TODO: Address the access to a private attribute
-                    for p in self.players:
-                        priest_info = p.priest_info()
+                    for p in self.active_players:
                         if p != self.current_player and p != target:
-                            if (
-                                self.current_player in priest_info
-                                and target not in priest_info
-                            ):
-                                p._priest_targets[target] = p._priest_targets[
-                                    self.current_player
-                                ]
-                                p.remove_priest_target(self.current_player)
-                            elif (
-                                self.current_player not in priest_info
-                                and target in priest_info
-                            ):
-                                p._priest_targets[
-                                    self.current_player
-                                ] = p._priest_targets[target]
-                                p.remove_priest_target(target)
-                            elif (
-                                self.current_player in priest_info
-                                and target in priest_info
-                            ):
-                                cached = p._priest_targets[self.current_player]
-                                p._priest_targets[
-                                    self.current_player
-                                ] = p._priest_targets[target]
-                                p._priest_targets[target] = cached
+                            p.swap_priest_knowledge(self.current_player, target)
 
         elif card == Card.HANDMAID:
             self.current_player.safe = True
@@ -442,7 +437,7 @@ class LoveLetterBaseEnv(gym.Env):
         else:
             # Should never get here
             # TODO remove
-            import ipdb; ipdb.set_trace()
+            breakpoint()
             raise InvalidPlayError(f"Invalid action {action} played")
 
         self.action_history.append(

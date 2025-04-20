@@ -1,6 +1,6 @@
 from __future__ import annotations
 from enum import IntEnum
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Type
+from typing import Dict, Optional, Sequence, Set, Tuple, Type
 
 import gym
 import numpy as np
@@ -81,7 +81,7 @@ class Deck:
 class Hand:
     MAX_SIZE = 2
 
-    def __init__(self, cards: Sequence[Card] = None, max_size: int = MAX_SIZE):
+    def __init__(self, cards: Sequence[Card] | None = None, max_size: int = MAX_SIZE):
         self._hand = [Card.EMPTY for i in range(max_size)]
 
         if cards:
@@ -127,11 +127,15 @@ class Hand:
         # raise ValueError("Expected player to have one card, but found empty hand")
 
     @property
+    def cards(self) -> list[Card]:
+        return [card for card in self if card != Card.EMPTY]
+
+    @property
     def full(self) -> bool:
         return Card.EMPTY not in self
 
     @property
-    def vector(self) -> List[int]:
+    def vector(self) -> list[int]:
         return [card.value for card in self]
 
     def add(self, card: Card) -> None:
@@ -174,14 +178,14 @@ class Hand:
 class Player:
     def __init__(self, position: int, name: str | None = None, hand: Hand | None = None):
         self.position = position
-        self.name = name if name is not None else f"Player {position}"
+        self.name = name if name is not None else f"Player {position + 1}"
         self.agent: Optional[Agent] = None
 
         # State that resets each game via reset()
         self.active = True
         self.safe = False
         self.hand = hand if hand else Hand()
-        self.play_history: List[Card] = []
+        self.play_history: list[Card] = []
         self.players_eliminated: Set[Player] = set()
         self._priest_targets: Dict[Player, Card] = {}
 
@@ -217,7 +221,7 @@ class Player:
         self.active = True
         self.safe = False
         self.hand = Hand()
-        self.play_history: List[Card] = []
+        self.play_history: list[Card] = []
         self.players_eliminated: Set[Player] = set()
         self._priest_targets: Dict[Player, Card] = {}
 
@@ -254,6 +258,7 @@ class Player:
             raise ValueError("Cannot play priest on oneself")
 
         if not target.active or target.safe:
+            breakpoint()
             raise ValueError("Invalid priest target")
 
         if target.card is None:
@@ -273,34 +278,61 @@ class Player:
         if len(self._priest_targets) > 3:
             raise ValueError("Excess priest info")
 
+        to_remove = set()
         for player in self._priest_targets:
             if not player.active:
-                import ipdb; ipdb.set_trace()
-                raise ValueError("Inactive priest target")
+                to_remove.add(player)
+
+        for player in to_remove:
+            del self._priest_targets[player]
 
         return self._priest_targets
 
     def remove_priest_target(self, target: Player) -> None:
         del self._priest_targets[target]
 
+    def swap_priest_knowledge(self, player1: Player, player2: Player) -> None:
+        if player1 == self or player2 == self:
+            raise ValueError("Card knowledge must be for other players")
+
+        if (
+            player1 in self._priest_targets
+            and player2 in self._priest_targets
+        ):
+            cached = self._priest_targets[player1]
+            self._priest_targets[
+                player1
+            ] = self._priest_targets[player2]
+            self._priest_targets[player2] = cached
+        elif player1 in self._priest_targets:
+            self._priest_targets[
+                player2
+            ] = self._priest_targets[player1]
+            self.remove_priest_target(player1)
+        elif player2 in self._priest_targets:
+            self._priest_targets[
+                player1
+            ] = self._priest_targets[player2]
+            self.remove_priest_target(player2)
+
     def __repr__(self):
         return f"Player: {self.name}"
 
 
 class Game:
-    def __init__(self, env_class: Type[gym.Env], agent_classes: List[Type[Agent]]):
+    def __init__(self, env_class: Type[gym.Env], agent_classes: list[Type[Agent]]):
         self.env = env_class(num_players=len(agent_classes))
         # TODO initialize player agents once env is initialized
 
-        self.players_done = [False for i in range(len(self.env.players))]
-        self.obs_history: np.array = []
+        self.players_done = [False for _ in range(len(self.env.players))]
+        self.obs_history: np.ndarray = []
 
         self.obs = np.array([])  # Necessary to provide a type hint
         self.player_done = False
         self.reward = 0
         self.info: Dict = {}
 
-    def step(self, action_id: int = None):
+    def step(self, action_id: int | None = None):
         if self.player_done:
             self.players_done[self.env.current_player.position] = True
             self.obs, self.reward, self.player_done, self.info = self.env.next_player()
