@@ -1,11 +1,16 @@
 from __future__ import annotations
+
+import math
+from collections import defaultdict
 from enum import IntEnum
 from typing import Dict, Optional, Sequence, Set, Tuple, Type
 
 import gym
 import numpy as np
+from gym import spaces
 from gym.utils import seeding
 
+from gym_love_letter import utils
 from gym_love_letter.agents import Agent, HumanAgent
 
 
@@ -23,6 +28,20 @@ class Card(IntEnum):
     @property
     def takes_target(self):
         return self in [self.GUARD, self.PRIEST, self.BARON, self.PRINCE, self.KING]
+
+    @classmethod
+    def ordered(cls):
+        # Skips EMPTY, we only consider real cards
+        return [cls(i) for i in range(cls.GUARD, cls.PRINCESS + 1)]
+
+    @classmethod
+    def space(cls) -> spaces.MultiBinary:
+        log_size = math.ceil(math.log2(len(cls)))
+        return spaces.MultiBinary(log_size)
+
+    def serialize(self) -> np.ndarray:
+        log_size = math.ceil(math.log2(len(self.__class__)))
+        return utils.to_binary_array(self, log_size)
 
 
 class Deck:
@@ -62,6 +81,15 @@ class Deck:
     def size(cls) -> int:
         return sum(cls.card_frequency.values())
 
+    @classmethod
+    def space(cls) -> spaces.MultiBinary:
+        log_size = math.ceil(math.log2(cls.size()))
+        return spaces.MultiBinary(log_size)
+
+    def serialize(self) -> np.ndarray:
+        log_size = math.ceil(math.log2(self.size()))
+        return utils.to_binary_array(self.remaining(), log_size)
+
     def shuffle(self) -> None:
         self.pointer = 1  # Effectively discards one card so it's never observed
         self.np_random.shuffle(self.cards)
@@ -76,6 +104,45 @@ class Deck:
 
     def remaining(self) -> int:
         return len(self.cards) - self.pointer
+
+
+class Discard:
+    def __init__(self):
+        self._discard: list[Card] = []
+
+    @classmethod
+    def space(cls) -> spaces.MultiBinary:
+        return spaces.MultiBinary(Deck.size())
+
+    @classmethod
+    def size(cls) -> int:
+        # One random card is removed from the deck each game
+        return Deck.size() - 1
+
+    def append(self, card: Card) -> None:
+        self._discard.append(card)
+
+    def reset(self) -> None:
+        self._discard = []
+
+    def serialize(self) -> np.ndarray:
+        vector = [0] * Deck.size()
+
+        card_counts = defaultdict(int)
+        for card in self._discard:
+            card_counts[card] += 1
+
+        idx = 0
+        for card in Card.ordered():
+            freq = Deck.card_frequency[card]
+            one_count = card_counts[card]
+
+            for i in range(freq):
+                if i < one_count:
+                    vector[idx] = 1
+                idx += 1
+
+        return np.array(vector)
 
 
 class Hand:
@@ -210,6 +277,25 @@ class Player:
     @property
     def status_vector(self) -> Tuple[int, int]:
         return (self.active, self.safe)
+
+    @classmethod
+    def space(cls) -> spaces.Dict:
+        return spaces.Dict({
+            "hand": spaces.Tuple((Card.space(), Card.space())),
+            "priest_info": spaces.Dict({
+                "target_1": Card.space(),
+                "target_2": Card.space(),
+                "target_3": Card.space(),
+            }),
+            "player_state": cls.state_space()
+        })
+
+    @classmethod
+    def state_space(cls) -> spaces.Dict:
+        return spaces.Dict({
+            "active": spaces.Discrete(2),
+            "safe": spaces.Discrete(2),
+        })
 
     def reset(self):
         """

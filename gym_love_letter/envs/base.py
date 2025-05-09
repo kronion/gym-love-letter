@@ -9,7 +9,7 @@ import numpy as np
 from gymnasium import spaces
 
 from gym_love_letter.agents import RandomAgent
-from gym_love_letter.engine import Card, Deck, Player
+from gym_love_letter.engine import Card, Deck, Discard, Player
 from gym_love_letter.envs.actions import (Action, ActionWrapper,
                                           generate_actions)
 from gym_love_letter.envs.observations import Observation
@@ -65,7 +65,7 @@ class Rewards:
             reward += 10  # Always reward winning
             reward += env.deck.remaining()
 
-        NORMALIZE_BY = 10
+        NORMALIZE_BY = 25
 
         return reward / NORMALIZE_BY
 
@@ -107,7 +107,7 @@ class LoveLetterBaseEnv(gym.Env):
 
         # Clear action history & discard pile
         self.action_history: list[ActionWrapper] = []
-        self.discard_pile: list[Card] = []
+        self.discard_pile = Discard()
 
         self.game_over = False
 
@@ -272,7 +272,7 @@ class LoveLetterBaseEnv(gym.Env):
 
         # Clear action history & discard pile
         self.action_history = []
-        self.discard_pile = []
+        self.discard_pile.reset()
 
         # Shuffle and deal
         self.deck.shuffle()

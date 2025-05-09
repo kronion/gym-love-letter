@@ -1,7 +1,16 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional
 
-from gym_love_letter.engine import Card, Player
+import numpy as np
+from gymnasium import spaces
+
+from gym_love_letter import utils
+from gym_love_letter.engine import Card, Deck, Discard, Player
+
+
+# Four targets or no target, so 3 bits needed to binary encode
+LOG_TARGET = 3
 
 
 @dataclass
@@ -10,6 +19,32 @@ class Action:
     target: Optional[int] = None
     guess: Optional[Card] = None
     _id: int = -1
+
+    @classmethod
+    def space(cls) -> spaces.MultiBinary:
+        card_encoding = Card.space().n
+        guess_encoding = Card.space().n - 1  # Minus 1 because GUARD isn't a valid guess
+        total = card_encoding + LOG_TARGET + guess_encoding
+
+        return spaces.MultiBinary(total)
+
+    def serialize(self) -> np.ndarray:
+        card_vec = self.card.serialize()
+
+        # Convert None target to 0, pad int targets by 1 to deduplicate
+        target = self.target + 1 if self.target is not None else 0
+        target_vec = utils.to_binary_array(target, LOG_TARGET)
+
+        guess = self.guess
+        assert guess is not Card.GUARD
+
+        if guess is None:
+            guess = Card.EMPTY.value
+        else:
+            guess = guess - 1
+        guess_vec = utils.to_binary_array(guess, Card.space().n - 1)
+
+        return np.array(card_vec + target_vec + guess_vec)
 
 
 @dataclass
@@ -22,6 +57,36 @@ class ActionWrapper:
     player: Player
     discarding_player: Optional[Player] = None
     discard: Optional[Card] = None
+
+
+class History:
+    def __init__(self):
+        self._history: list[ActionWrapper] = []
+
+    @classmethod
+    def space(cls) -> spaces.MultiBinary:
+        return spaces.MultiBinary(Action.space().n * Discard.size())
+
+    def __len__(self) -> int:
+        return len(self._history)
+
+    def append(self, action: ActionWrapper) -> None:
+        self._history.append(action)
+
+    def reset(self) -> None:
+        self._history = []
+
+    def serialize(self) -> np.ndarray:
+        vector = []
+        vector_parts = [action.action.serialize() for action in self._history]
+        if len(vector_parts) > 0:
+            vector = np.concatenate(vector_parts)
+
+        remaining = self.space().n - len(vector)
+        padding = np.zeros(remaining)
+        vector = np.concatenate([vector, padding])
+
+        return vector
 
 
 def _generate_guard_actions(num_players: int) -> List[Action]:

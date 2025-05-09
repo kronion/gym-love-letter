@@ -4,7 +4,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-from gym_love_letter.engine import Card, Deck, Player
+from gym_love_letter.engine import Card, Deck, Discard, Player
 from gym_love_letter.envs.actions import ActionWrapper
 
 
@@ -25,7 +25,7 @@ class Observation:
         players: List[Player],
         curr_player: Player,
         deck: Deck,
-        discard: List[Card],
+        discard: Discard,
         plays: List[ActionWrapper],
         game_over: bool,
         winners: List[Player],
@@ -144,8 +144,8 @@ class Observation:
         vec[self._player_deck_size_pos] = self.deck.remaining()
 
         # The following sections should be padded with zeros if the data is smaller than the available space
-        pad_length = self._discard_size - len(self.discard)
-        discard = [d.value for d in self.discard] + [0] * pad_length
+        pad_length = self._discard_size - len(self.discard._discard)
+        discard = [d.value for d in self.discard._discard] + [0] * pad_length
         vec[self._player_discard_pos] = discard
 
         pad_length = self._action_history_size - len(self.plays)
@@ -182,8 +182,8 @@ class Observation:
         vec[self._full_deck_size_pos] = self.deck.remaining()
 
         # The following sections should be padded with zeros if the data is smaller than the available space
-        pad_length = self._discard_size - len(self.discard)
-        discard = [d.value for d in self.discard] + [0] * pad_length
+        pad_length = self._discard_size - len(self.discard._discard)
+        discard = [d.value for d in self.discard._discard] + [0] * pad_length
         vec[self._full_discard_pos] = discard
 
         pad_length = self._action_history_size - len(self.plays)
@@ -231,6 +231,26 @@ class Observation:
             space += [action_space_size]
 
         return spaces.MultiDiscrete(space)
+
+    @classmethod
+    def dict_space(cls, action_space_size: int) -> spaces.Dict:
+        return spaces.Dict({
+            "self": Player.space(),
+            "target_1": Player.state_space(),
+            "target_2": Player.state_space(),
+            "target_3": Player.state_space(),
+            "deck_size": Deck.space(),
+            "discard": Discard.space(),
+            "history": History.space(),
+        })
+
+    def serialize(self) -> dict:
+        obs = {
+            "deck_size": self.deck.serialize(),
+            "discard": self.discard.serialize(),
+        }
+
+        return obs
 
     def __repr__(self):
         return f"Observation: {self.vector}"
