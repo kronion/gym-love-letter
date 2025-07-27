@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -44,7 +45,7 @@ class Action:
             guess = guess - 1
         guess_vec = utils.to_binary_array(guess, Card.space().n - 1)
 
-        return np.array(card_vec + target_vec + guess_vec)
+        return np.concatenate([card_vec, target_vec, guess_vec])
 
 
 @dataclass
@@ -67,6 +68,9 @@ class History:
     def space(cls) -> spaces.MultiBinary:
         return spaces.MultiBinary(Action.space().n * Discard.size())
 
+    def __iter__(self) -> Iterator[ActionWrapper]:
+        return iter(self._history)
+
     def __len__(self) -> int:
         return len(self._history)
 
@@ -83,7 +87,7 @@ class History:
             vector = np.concatenate(vector_parts)
 
         remaining = self.space().n - len(vector)
-        padding = np.zeros(remaining)
+        padding = np.zeros(remaining, dtype=np.uint8)
         vector = np.concatenate([vector, padding])
 
         return vector

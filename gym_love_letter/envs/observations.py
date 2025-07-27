@@ -4,12 +4,13 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from gym_love_letter import constants, utils
 from gym_love_letter.engine import Card, Deck, Discard, Player
-from gym_love_letter.envs.actions import ActionWrapper
+from gym_love_letter.envs.actions import History, generate_actions
 
 
 class Observation:
-    MAX_NUM_PLAYERS = 4
+    ACTION_SPACE_SIZE = len(generate_actions(constants.MAX_NUM_PLAYERS))
 
     CURRENT_HAND_SIZE = 2
     TARGET_HAND_SIZE = 1
@@ -26,7 +27,7 @@ class Observation:
         curr_player: Player,
         deck: Deck,
         discard: Discard,
-        plays: List[ActionWrapper],
+        history: History,
         game_over: bool,
         winners: List[Player],
         env: gym.Env,
@@ -36,7 +37,7 @@ class Observation:
         self.curr_player = curr_player
         self.deck = deck
         self.discard = discard
-        self.plays = plays
+        self.history = history
         self.game_over = game_over
         self.winners = winners
         self.valid_actions = env.valid_actions
@@ -53,12 +54,12 @@ class Observation:
         # Remembered information about other player hands (from playing a Priest or King).
         # NB: Non-current players have fewer cards.
         self._player_target_hand_pos = []
-        for slot in range(self.PRIEST_SLOTS):
+        for _ in range(self.PRIEST_SLOTS):
             self._player_target_hand_pos.append(slice(i, i + self.PRIEST_SLOT_SIZE))
             i += self.PRIEST_SLOT_SIZE
 
         self._player_status_pos = []
-        for pos in range(self.MAX_NUM_PLAYERS):
+        for _ in range(constants.MAX_NUM_PLAYERS):
             self._player_status_pos.append(slice(i, i + self.STATUS_SIZE))
             i += self.STATUS_SIZE
 
@@ -84,23 +85,23 @@ class Observation:
         i += 1
 
         self._full_hand_pos = []
-        for pos in range(self.MAX_NUM_PLAYERS):
+        for _ in range(constants.MAX_NUM_PLAYERS):
             self._full_hand_pos.append(slice(i, i + self.CURRENT_HAND_SIZE))
             i += self.CURRENT_HAND_SIZE
 
         # Remembered information about other player hands (from playing a Priest or King).
         # NB: Non-current players have fewer cards.
         self._full_target_hand_pos = []
-        for pos in range(self.MAX_NUM_PLAYERS):
+        for _ in range(constants.MAX_NUM_PLAYERS):
             slots = []
-            for slot in range(self.PRIEST_SLOTS):
+            for _ in range(self.PRIEST_SLOTS):
                 slots.append(slice(i, i + self.PRIEST_SLOT_SIZE))
                 i += self.PRIEST_SLOT_SIZE
 
             self._full_target_hand_pos.append(slots)
 
         self._full_status_pos = []
-        for pos in range(self.MAX_NUM_PLAYERS):
+        for _ in range(constants.MAX_NUM_PLAYERS):
             self._full_status_pos.append(slice(i, i + self.STATUS_SIZE))
             i += self.STATUS_SIZE
 
@@ -148,8 +149,8 @@ class Observation:
         discard = [d.value for d in self.discard._discard] + [0] * pad_length
         vec[self._player_discard_pos] = discard
 
-        pad_length = self._action_history_size - len(self.plays)
-        actions = [a.action._id for a in self.plays] + [0] * pad_length
+        pad_length = self._action_history_size - len(self.history)
+        actions = [a.action._id for a in self.history] + [0] * pad_length
         vec[self._player_action_history_pos] = actions
 
         return vec
@@ -186,14 +187,14 @@ class Observation:
         discard = [d.value for d in self.discard._discard] + [0] * pad_length
         vec[self._full_discard_pos] = discard
 
-        pad_length = self._action_history_size - len(self.plays)
-        actions = [a.action._id for a in self.plays] + [0] * pad_length
+        pad_length = self._action_history_size - len(self.history)
+        actions = [a.action._id for a in self.history] + [0] * pad_length
         vec[self._full_action_history_pos] = actions
 
         return vec
 
     @classmethod
-    def space(cls, action_space_size: int) -> spaces.Space:
+    def space(cls) -> spaces.Space:
         space = []
 
         # Put current player's cards at the front of the observation state so
@@ -207,10 +208,10 @@ class Observation:
         # Priest information. Three spaces because of the number of priests + king in the deck
         hand = [CARD_ONE]
         for _ in range(cls.PRIEST_SLOTS):
-            space += [cls.MAX_NUM_PLAYERS]  # Every other player is a target, or nobody
+            space += [constants.MAX_NUM_PLAYERS]  # Every other player is a target, or nobody
             space += hand
 
-        for player in range(cls.MAX_NUM_PLAYERS):
+        for _ in range(constants.MAX_NUM_PLAYERS):
             STILL_ACTIVE = 2
             SAFE = 2
             player_state = [STILL_ACTIVE, SAFE]
@@ -222,18 +223,46 @@ class Observation:
 
         # Keep track of every single discarded card
         # -1 because one card is held out from the deck each game
-        for card in range(DECK_SIZE - 1):
+        for _ in range(DECK_SIZE - 1):
             space += [len(Card)]
 
         # Keep track of every action made as well. There can only
         # be as many actions as there are played cards.
-        for card in range(DECK_SIZE - 1):
-            space += [action_space_size]
+        for _ in range(DECK_SIZE - 1):
+            space += [cls.ACTION_SPACE_SIZE]
 
         return spaces.MultiDiscrete(space)
 
+    def serialize(self) -> np.ndarray:
+        return self.vector
+
+    def __repr__(self):
+        return f"Observation: {self.vector}"
+
+
+def _deserialize_list(serialization: list) -> list | np.ndarray:
+    if isinstance(serialization[0], int):
+        return np.array(serialization)
+    else:
+        return [_deserialize_list(i) for i in serialization]
+
+def _deserialize(serialization: dict) -> dict:
+    obs = {}
+    for k, v in serialization.items():
+        if isinstance(v, dict):
+            val = _deserialize(v)
+        elif isinstance(v, list):
+            val = _deserialize_list(v)
+        else:
+            val = v
+        obs[k] = val
+
+    return obs
+
+
+class DictObservation(Observation):
     @classmethod
-    def dict_space(cls, action_space_size: int) -> spaces.Dict:
+    def space(cls) -> spaces.Dict:
         return spaces.Dict({
             "self": Player.space(),
             "target_1": Player.state_space(),
@@ -245,21 +274,33 @@ class Observation:
         })
 
     def serialize(self) -> dict:
+        empty_state = {
+            "active": utils.to_binary_array(int(False), 1),
+            "safe": utils.to_binary_array(int(False), 1),
+        }
+
+        target_states = [empty_state] * 3
+
+        for i in range(self.num_players - 1):
+            target_pos = (self.curr_player.position + i + 1) % self.num_players
+            state = self.players[target_pos].serialize_state()
+            target_states[i] = state
+
         obs = {
+            "self": self.curr_player.serialize(),
+            "target_1": target_states[0],
+            "target_2": target_states[1],
+            "target_3": target_states[2],
             "deck_size": self.deck.serialize(),
             "discard": self.discard.serialize(),
+            "history": self.history.serialize(),
         }
 
         return obs
 
-    def __repr__(self):
-        return f"Observation: {self.vector}"
-
-
-class DictObservation(Observation):
     @classmethod
-    def space(cls, action_space_size: int) -> spaces.Space:
-        return spaces.Dict({
-            "observation": super().space(action_space_size),
-            "action_mask": spaces.MultiBinary(action_space_size),
-        })
+    def deserialize(cls, serialization: dict) -> dict:
+        return _deserialize(serialization)
+
+    def __repr__(self):
+        return f"DictObservation: {self.serialize()}"

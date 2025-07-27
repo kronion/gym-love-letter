@@ -1,0 +1,1 @@
+MAX_NUM_PLAYERS = 4

@@ -1,1 +1,2 @@
 from gym_love_letter.envs.base import LoveLetterBaseEnv, LoveLetterMultiAgentEnv
+from gym_love_letter.envs.dict_env import LoveLetterDictEnv

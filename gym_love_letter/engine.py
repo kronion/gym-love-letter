@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Iterator
 from enum import IntEnum
-from typing import Dict, Optional, Sequence, Set, Tuple, Type
+from typing import Sequence, Type
 
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
-from gym.utils import seeding
+from gymnasium import spaces
+from gymnasium.utils import seeding
 
-from gym_love_letter import utils
+from gym_love_letter import constants, utils
 from gym_love_letter.agents import Agent, HumanAgent
 
 
@@ -149,7 +150,7 @@ class Hand:
     MAX_SIZE = 2
 
     def __init__(self, cards: Sequence[Card] | None = None, max_size: int = MAX_SIZE):
-        self._hand = [Card.EMPTY for i in range(max_size)]
+        self._hand = [Card.EMPTY for _ in range(max_size)]
 
         if cards:
             if len(cards) > max_size:
@@ -160,25 +161,11 @@ class Hand:
 
         self._index = 0
 
-    def __iter__(self):
-        self._index = 0
-        return self
-
-    def __next__(self):
-        if self._index == len(self._hand):
-            raise StopIteration
-
-        card = self._hand[self._index]
-        self._index += 1
-        return card
-
-    @classmethod
-    def parse(cls, vector: Sequence) -> Hand:
-        cards = [Card[i] for i in vector]
-        return cls(cards=cards, max_size=len(cards))
+    def __iter__(self) -> Iterator[Card]:
+        return iter(self._hand)
 
     @property
-    def card(self) -> Optional[Card]:
+    def card(self) -> Card | None:
         """
         Shortcut to return the only card in the player's hand.
         """
@@ -191,7 +178,6 @@ class Hand:
                 return c
 
         return None
-        # raise ValueError("Expected player to have one card, but found empty hand")
 
     @property
     def cards(self) -> list[Card]:
@@ -204,6 +190,18 @@ class Hand:
     @property
     def vector(self) -> list[int]:
         return [card.value for card in self]
+
+    @classmethod
+    def parse(cls, vector: Sequence) -> Hand:
+        cards = [Card[i] for i in vector]
+        return cls(cards=cards, max_size=len(cards))
+
+    @classmethod
+    def space(cls) -> spaces.Tuple:
+        return spaces.Tuple((Card.space(), Card.space()))
+
+    def serialize(self) -> tuple:
+        return (self._hand[0].serialize(), self._hand[1].serialize())
 
     def add(self, card: Card) -> None:
         """
@@ -242,22 +240,110 @@ class Hand:
         self.add(deck.draw())
 
 
+class PriestInfo:
+    def __init__(self, player: Player, num_players: int):
+        self.num_players = num_players
+        self._player = player
+        self._priest_info: dict[Player, Card] = {}
+
+    @classmethod
+    def space(cls) -> spaces.Dict:
+        return spaces.Dict({
+            "target_1": Card.space(),
+            "target_2": Card.space(),
+            "target_3": Card.space(),
+        })
+
+    def serialize(self) -> dict:
+        serialization = {f"target_{i}": Card.EMPTY.serialize() for i in range(1, constants.MAX_NUM_PLAYERS)}
+
+        for player, card in self.priest_info().items():
+            relative_pos = (player.position - self._player.position) % self.num_players
+            serialization[f"target_{relative_pos}"] = card.serialize()
+
+        return serialization
+
+    def add(self, target: Player) -> None:
+        if target == self._player:
+            raise ValueError("Cannot play priest on oneself")
+
+        if not target.active or target.safe:
+            raise ValueError("Invalid priest target")
+
+        if target.card is None:
+            raise ValueError("Priest target does not have a card")
+
+        if len(self._priest_info) == 3 and target not in self._priest_info:
+            raise ValueError("Cannot add excess priest info")
+
+        self._priest_info[target] = target.card
+
+    def priest_info(self) -> dict[Player, Card]:
+        """
+        Use this method instead of directly accessing _priest_info in order
+        to benefit from basic sanity checking.
+        """
+
+        if len(self._priest_info) > self.num_players - 1:
+            raise ValueError("Excess priest info")
+
+        to_remove = set()
+        for player in self._priest_info:
+            if not player.active:
+                to_remove.add(player)
+
+        for player in to_remove:
+            del self._priest_info[player]
+
+        return self._priest_info
+
+    def remove(self, target: Player) -> None:
+        del self._priest_info[target]
+
+    def reset(self) -> None:
+        self._priest_info = {}
+
+    def swap(self, player1: Player, player2: Player) -> None:
+        if player1 == self._player or player2 == self._player:
+            raise ValueError("Card knowledge must be for other players")
+
+        if (
+            player1 in self._priest_info
+            and player2 in self._priest_info
+        ):
+            cached = self._priest_info[player1]
+            self._priest_info[
+                player1
+            ] = self._priest_info[player2]
+            self._priest_info[player2] = cached
+        elif player1 in self._priest_info:
+            self._priest_info[
+                player2
+            ] = self._priest_info[player1]
+            self.remove(player1)
+        elif player2 in self._priest_info:
+            self._priest_info[
+                player1
+            ] = self._priest_info[player2]
+            self.remove(player2)
+
 class Player:
-    def __init__(self, position: int, name: str | None = None, hand: Hand | None = None):
+    def __init__(self, position: int, num_players: int, name: str | None = None, hand: Hand | None = None):
         self.position = position
+        self.num_players = num_players
         self.name = name if name is not None else f"Player {position + 1}"
-        self.agent: Optional[Agent] = None
+        self.agent: Agent | None = None
 
         # State that resets each game via reset()
         self.active = True
         self.safe = False
         self.hand = hand if hand else Hand()
+        self._priest_info = PriestInfo(self, num_players)
         self.play_history: list[Card] = []
-        self.players_eliminated: Set[Player] = set()
-        self._priest_targets: Dict[Player, Card] = {}
+        self.players_eliminated: set[Player] = set()
 
     @property
-    def card(self) -> Optional[Card]:
+    def card(self) -> Card | None:
         return self.hand.card
 
     @property
@@ -275,19 +361,15 @@ class Player:
         return self.play_history[-1]
 
     @property
-    def status_vector(self) -> Tuple[int, int]:
+    def status_vector(self) -> tuple[int, int]:
         return (self.active, self.safe)
 
     @classmethod
     def space(cls) -> spaces.Dict:
         return spaces.Dict({
-            "hand": spaces.Tuple((Card.space(), Card.space())),
-            "priest_info": spaces.Dict({
-                "target_1": Card.space(),
-                "target_2": Card.space(),
-                "target_3": Card.space(),
-            }),
-            "player_state": cls.state_space()
+            "hand": Hand.space(),
+            "priest_info": PriestInfo.space(),
+            "player_state": cls.state_space(),
         })
 
     @classmethod
@@ -296,6 +378,19 @@ class Player:
             "active": spaces.Discrete(2),
             "safe": spaces.Discrete(2),
         })
+
+    def serialize(self) -> dict:
+        return {
+            "hand": self.hand.serialize(),
+            "priest_info": self._priest_info.serialize(),
+            "player_state": self.serialize_state(),
+        }
+
+    def serialize_state(self) -> dict:
+        return {
+            "active": utils.to_binary_array(int(self.active), 1),
+            "safe": utils.to_binary_array(int(self.safe), 1),
+        }
 
     def reset(self):
         """
@@ -308,13 +403,13 @@ class Player:
         self.safe = False
         self.hand = Hand()
         self.play_history: list[Card] = []
-        self.players_eliminated: Set[Player] = set()
-        self._priest_targets: Dict[Player, Card] = {}
+        self.players_eliminated: set[Player] = set()
+        self._priest_info.reset()
 
     def set_agent(self, agent: Agent):
         self.agent = agent
 
-    def eliminate(self) -> Optional[Card]:
+    def eliminate(self) -> Card | None:
         """
         Mark the player as out of the game.
 
@@ -340,66 +435,16 @@ class Player:
         self.play_history.append(card)
 
     def add_priest_target(self, target: Player) -> None:
-        if target == self:
-            raise ValueError("Cannot play priest on oneself")
+        self._priest_info.add(target)
 
-        if not target.active or target.safe:
-            breakpoint()
-            raise ValueError("Invalid priest target")
-
-        if target.card is None:
-            raise ValueError("Priest target does not have a card")
-
-        if len(self._priest_targets) == 3 and target not in self._priest_targets:
-            raise ValueError("Cannot add excess priest info")
-
-        self._priest_targets[target] = target.card
-
-    def priest_info(self) -> Dict[Player, Card]:
-        """
-        Use this method instead of directly accessing _priest_targets in order
-        to benefit from basic sanity checking.
-        """
-
-        if len(self._priest_targets) > 3:
-            raise ValueError("Excess priest info")
-
-        to_remove = set()
-        for player in self._priest_targets:
-            if not player.active:
-                to_remove.add(player)
-
-        for player in to_remove:
-            del self._priest_targets[player]
-
-        return self._priest_targets
+    def priest_info(self) -> dict[Player, Card]:
+        return self._priest_info.priest_info()
 
     def remove_priest_target(self, target: Player) -> None:
-        del self._priest_targets[target]
+        self._priest_info.remove(target)
 
     def swap_priest_knowledge(self, player1: Player, player2: Player) -> None:
-        if player1 == self or player2 == self:
-            raise ValueError("Card knowledge must be for other players")
-
-        if (
-            player1 in self._priest_targets
-            and player2 in self._priest_targets
-        ):
-            cached = self._priest_targets[player1]
-            self._priest_targets[
-                player1
-            ] = self._priest_targets[player2]
-            self._priest_targets[player2] = cached
-        elif player1 in self._priest_targets:
-            self._priest_targets[
-                player2
-            ] = self._priest_targets[player1]
-            self.remove_priest_target(player1)
-        elif player2 in self._priest_targets:
-            self._priest_targets[
-                player1
-            ] = self._priest_targets[player2]
-            self.remove_priest_target(player2)
+        self._priest_info.swap(player1, player2)
 
     def __repr__(self):
         return f"Player: {self.name}"
@@ -416,7 +461,7 @@ class Game:
         self.obs = np.array([])  # Necessary to provide a type hint
         self.player_done = False
         self.reward = 0
-        self.info: Dict = {}
+        self.info: dict = {}
 
     def step(self, action_id: int | None = None):
         if self.player_done:
@@ -437,7 +482,7 @@ class Game:
         self.obs = self.env.reset()
         self.player_done = False
         self.reward = 0
-        self.info: Dict = {}
+        self.info: dict = {}
 
     def run(self):
         self.reset()

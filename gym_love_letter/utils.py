@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 
 
-def to_binary_array(n: int, digits: int) -> np.ndarray:
+def to_binary_array(n: int, digits: int, dtype=np.uint8) -> np.ndarray:
     array = [0] * digits
 
     idx = 0
@@ -18,7 +18,7 @@ def to_binary_array(n: int, digits: int) -> np.ndarray:
             array[idx] = 1
         idx += 1
 
-    return np.array(array, dtype=np.uint8)
+    return np.array(array, dtype=dtype)
 
 
 def from_binary_array(array: list[int] | npt.NDArray[np.uint]) -> int:

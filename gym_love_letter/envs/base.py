@@ -8,9 +8,10 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from gym_love_letter import constants
 from gym_love_letter.agents import RandomAgent
 from gym_love_letter.engine import Card, Deck, Discard, Player
-from gym_love_letter.envs.actions import (Action, ActionWrapper,
+from gym_love_letter.envs.actions import (Action, ActionWrapper, History,
                                           generate_actions)
 from gym_love_letter.envs.observations import Observation
 
@@ -77,18 +78,19 @@ class LoveLetterBaseEnv(gym.Env):
         self,
         num_players: int = 2,
         randomize_player_count: bool = False,
+        randomize_agents: bool = False,
         agent_classes: Sequence[type[Agent]] | None = None,
         reward_fn: Callable[[LoveLetterBaseEnv], float] = Rewards.fast_elimination_reward,
         player_names: list[str] | None = None,
     ):
-        # If we want to use stable_baselines, our action space cannot be a tuple or Dict
-        self.actions = generate_actions(Observation.MAX_NUM_PLAYERS)
+        self.actions = generate_actions(constants.MAX_NUM_PLAYERS)
         self.action_space: spaces.Discrete = spaces.Discrete(len(self.actions))
 
-        self.observation_space = Observation.space(int(self.action_space.n))
+        self.observation_space = Observation.space()
 
         self.num_players = num_players
         self.randomize_player_count = randomize_player_count
+        self.randomize_agents = randomize_agents
         self.reward = reward_fn
 
         # Player names are auto-generated if not specified
@@ -96,7 +98,7 @@ class LoveLetterBaseEnv(gym.Env):
             player_names = []
 
         self.players = [
-            Player(i, name=name) for i, name in itertools.zip_longest(range(self.num_players), player_names)
+            Player(i, self.num_players, name=name) for i, name in itertools.zip_longest(range(self.num_players), player_names)
         ]
         self.current_player = self.players[0]
         self.starting_player = self.current_player
@@ -106,7 +108,7 @@ class LoveLetterBaseEnv(gym.Env):
         self.deck = Deck()
 
         # Clear action history & discard pile
-        self.action_history: list[ActionWrapper] = []
+        self.action_history = History()
         self.discard_pile = Discard()
 
         self.game_over = False
@@ -114,6 +116,10 @@ class LoveLetterBaseEnv(gym.Env):
         # Now that the environment has been initialized, provide a reference
         # to each player agent. This allows agents to access the env's
         # valid action mask.
+        # IMPORTANT: If the number of agents is not equal to the number of players,
+        # players will be randomly assigned agents from the list of options. Combined
+        # with the randomize_agents, this allows for dynamic player behavior from
+        # game to game.
         self._agents: Sequence[Agent] = []
         if agent_classes is None:
             agent_classes = [RandomAgent] * self.num_players
@@ -122,10 +128,16 @@ class LoveLetterBaseEnv(gym.Env):
         self.set_agents(agents)
 
     def set_agents(self, agents: Sequence[Agent]) -> None:
-        if len(agents) != self.num_players:
-            raise ValueError("Must have same number of agents as players")
         self._agents = agents
-        for agent, player in zip(self._agents, self.players):
+        if len(agents) == self.num_players:
+            for agent, player in zip(self._agents, self.players):
+                player.set_agent(agent)
+        else:
+            self._randomize_agents()
+
+    def _randomize_agents(self):
+        for player in self.active_players:
+            agent = self.np_random.choice(self._agents)
             player.set_agent(agent)
 
     @property
@@ -246,8 +258,7 @@ class LoveLetterBaseEnv(gym.Env):
         # Update priest info for all other players
         for p in self.active_players:
             if p != player:
-                # TODO: Address private attribute access
-                if player in p._priest_targets:
+                if player in p.priest_info():
                     p.remove_priest_target(player)
 
     def _reset(self) -> Observation:
@@ -262,21 +273,24 @@ class LoveLetterBaseEnv(gym.Env):
         if self.randomize_player_count:
             active_players = self.np_random.integers(2, self.num_players, endpoint=True)
 
-            # Skip the active players from the front of the list.
+            # Deaactive players from the back of the list.
             # We're assuming the main player is always in position 0.
             for p in self.players[active_players:]:
                 p.active = False
+
+        if self.randomize_agents:
+            self._randomize_agents()
 
         self.current_player = self.np_random.choice(self.active_players)
         self.starting_player = self.current_player
 
         # Clear action history & discard pile
-        self.action_history = []
+        self.action_history.reset()
         self.discard_pile.reset()
 
         # Shuffle and deal
         self.deck.shuffle()
-        for player in self.players:
+        for player in self.active_players:
             player.draw(self.deck)
             if player == self.current_player:
                 player.draw(self.deck)
@@ -287,7 +301,7 @@ class LoveLetterBaseEnv(gym.Env):
         super().reset(seed=seed)  # Farama requires this to initialize np_random
         deck_seed = int(self.np_random.integers(2 ** 63))
         self.deck.seed(deck_seed)
-        return self._reset().vector, {}
+        return self._reset().serialize(), {}
 
     def observe(self) -> Observation:
         return Observation(
@@ -351,7 +365,7 @@ class LoveLetterBaseEnv(gym.Env):
             self.current_player.draw(self.deck)
 
         obs = self.observe()
-        return obs.vector, reward, done, False, {"observation": obs}
+        return obs.serialize(), reward, done, False, {"observation": obs}
 
     def step(self, action_id: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         # Validates and reindexes action
@@ -399,6 +413,10 @@ class LoveLetterBaseEnv(gym.Env):
                         discarding_player = self.current_player
                         discard = current_player_card
                         self.eliminate(self.current_player)
+                    else:
+                        # Both players saw each other's card
+                        self.current_player.add_priest_target(target)
+                        target.add_priest_target(self.current_player)
 
                 elif card == Card.PRINCE:
                     self.discard(target, target_card)
@@ -451,8 +469,8 @@ class LoveLetterBaseEnv(gym.Env):
         return self._next_player()
 
     @classmethod
-    def load(vector: np.array) -> LoveLetterBaseEnv:
-        pass
+    def load(cls, vector: np.array) -> LoveLetterBaseEnv:
+        raise NotImplementedError()
 
 
 class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
@@ -503,7 +521,7 @@ class LoveLetterMultiAgentEnv(LoveLetterBaseEnv):
             print(f"Action: {self.actions[action_id]}")
             print(f"Valid Actions: {self.valid_actions}")
             # TODO: Deal with this magic number
-            return obs.vector, -10, True, False, {"observation": obs}
+            return obs.serialize(), -10, True, False, {"observation": obs}
 
         if full_cycle:
             # Make a move for every other agent in the game to come back around to the current player
